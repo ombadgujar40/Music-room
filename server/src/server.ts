@@ -4,7 +4,7 @@ import express from "express";
 import http from "http";
 import cors from "cors";
 import { Server } from "socket.io";
-import { rooms } from "./rooms";
+import { rooms, Room } from "./rooms";
 
 const app = express();
 app.use(cors({
@@ -20,6 +20,60 @@ const io = new Server(server, {
     },
 });
 
+function startDJTimer(room:Room,io: Server, roomId: string) {
+    const currentDJ = room.currentDJ;
+
+    if (!currentDJ) return;
+
+    setTimeout(() => {
+        // ⚠️ check if DJ already played
+        if (room.currentDJ === currentDJ && !room.currentSong) {
+            console.log("DJ inactive → rotating");
+
+            const first = room.queue.shift();
+            if (first) room.queue.push(first);
+
+            room.currentDJ = room.queue[0] || null;
+
+            io.to(roomId).emit("ROOM_UPDATE", room);
+
+            // recursively start timer again
+            startDJTimer(room, io, roomId);
+        }
+    }, 15000); // 15 sec
+}
+
+function handleSongEnd(room: Room, io:Server, roomId: string) {
+    const likes = Object.values(room.votes).filter(v => v === "like").length;
+    const skips = Object.values(room.votes).filter(v => v === "skip").length;
+
+    const djId = room.currentDJ;
+
+    // 🎯 scoring
+    if (djId && room.scores[djId] !== undefined) {
+        if (likes >= skips) {
+            room.scores[djId] += 10;
+        } else {
+            room.scores[djId] -= 5;
+        }
+    }
+
+    // 🔁 rotate DJ
+    const first = room.queue.shift();
+    if (first) room.queue.push(first);
+
+    room.currentDJ = room.queue[0] || null;
+
+    // 🧹 reset state
+    room.currentSong = null;
+    room.votes = {};
+
+    io.to(roomId).emit("ROOM_UPDATE", room);
+
+    // ⏱ start DJ timeout
+    startDJTimer(room, io, roomId);
+}
+
 io.on("connection", (socket) => {
     console.log("Connected", socket.id)
 
@@ -32,11 +86,16 @@ io.on("connection", (socket) => {
                 queue: [],
                 currentDJ: null,
                 currentSong: null,
-                votes: {}
+                votes: {},
+                scores: {},
             };
         }
-
         const room = rooms[roomId];
+
+        if (!room.scores[socket.id]) {
+            room.scores[socket.id] = 0;
+        }
+
         if (!room.votes) {
             room.votes = {};
         }
@@ -57,9 +116,10 @@ io.on("connection", (socket) => {
         }
 
         socket.join(roomId);
+        socket.emit("ROOM_UPDATE", room);
 
         // Send updated room state to all users in room
-        io.to(roomId).emit("ROOM_UPDATE", rooms[roomId]);
+        io.to(roomId).emit("ROOM_UPDATE", room);
     });
 
     socket.on("NEXT_TURN", ({ roomId }) => {
@@ -110,19 +170,18 @@ io.on("connection", (socket) => {
         const skipVotes = Object.values(room.votes).filter(
             (v) => v === "skip"
         ).length;
-
-        // threshold: 50%
         if (skipVotes > totalUsers / 2) {
-            // trigger next turn
-            const first = room.queue.shift();
-            if (first) room.queue.push(first);
-
-            room.currentDJ = room.queue[0] || null;
-            room.currentSong = null;
-            room.votes = {};
+            handleSongEnd(room, io, roomId);
         }
 
         io.to(roomId).emit("ROOM_UPDATE", room);
+    });
+
+    socket.on("SONG_ENDED", ({ roomId }) => {
+        const room = rooms[roomId];
+        if (!room) return;
+
+        handleSongEnd(room, io, roomId);
     });
 
     socket.on("disconnect", () => {
@@ -145,6 +204,8 @@ io.on("connection", (socket) => {
 app.get("/", (req, res) => {
     res.send("hello")
 })
+
+
 
 const PORT = process.env.PORT || 3000
 server.listen(PORT, () => {

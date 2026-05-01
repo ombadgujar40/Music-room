@@ -8,7 +8,10 @@ function App() {
   const isDJ = socket.id === room?.currentDJ;
   const [currentSong, setCurrentSong] = useState<any>(null);
   const [shouldPlay, setShouldPlay] = useState(false);
+  const [hasUnlockedAudio, setHasUnlockedAudio] = useState(false);
   const playerRef = useRef<any>(null);
+  const hasSyncedRef = useRef(false);
+  const prevSongRef = useRef<any>(null);
 
   useEffect(() => {
 
@@ -16,6 +19,8 @@ function App() {
     socket.on("ROOM_UPDATE", (roomData) => {
       console.log("Room State:", roomData);
       setRoom(roomData);
+
+      setCurrentSong(roomData.currentSong);
     });
 
     //room joining handler
@@ -29,15 +34,17 @@ function App() {
     };
   }, []);
 
-  useEffect(() => {
-    socket.on("PLAY_SONG", (song) => {
-      setCurrentSong(song);
-    });
 
-    return () => {
-      socket.off("PLAY_SONG");
-    };
-  }, []);
+  useEffect(() => {
+    if (!currentSong && playerRef.current && !playerRef.current) {
+      playerRef.current.stopVideo();
+      playerRef.current = null;
+    }
+  }, [currentSong]);
+
+ 
+
+
 
   useEffect(() => {
     if (!currentSong?.startAt) return;
@@ -53,16 +60,26 @@ function App() {
     }
   }, [currentSong]);
 
-  const handleStart = () => {
+  useEffect(() => {
     if (!currentSong || !playerRef.current) return;
 
-    const now = Date.now();
 
-    const elapsed = (now - currentSong.startAt) / 1000;
+    if (hasSyncedRef.current) return;
+
+    const elapsed = (Date.now() - currentSong.startAt) / 1000;
 
     playerRef.current.seekTo(elapsed, true);
     playerRef.current.playVideo();
-  };
+
+    hasSyncedRef.current = true;
+  }, [currentSong]);
+
+  useEffect(() => {
+    if (currentSong) {
+      hasSyncedRef.current = false;
+    }
+  }, [currentSong?.id]);
+
 
   return (
     <div>
@@ -78,6 +95,12 @@ function App() {
       </p>
       <br />
       <br />
+      {isDJ && !currentSong && (
+        <p>⏳ Your turn! Play a song within 15 seconds</p>
+      )}
+      <br />
+      <br />
+
 
 
       <input
@@ -118,21 +141,44 @@ function App() {
       )}<br />
 
 
-      <button onClick={handleStart}>
-        Start Listening 🎧
-      </button>
+      {!hasUnlockedAudio && (
+        <button onClick={() => setHasUnlockedAudio(true)}>
+          Start Listening 🎧
+        </button>
+      )}
+      <br />
+      <br />
 
 
 
       <h2>Now Playing:</h2>
       <p>{room?.currentSong?.title || "No song"}</p>
-      {currentSong && (
+      {currentSong ? (
         <YouTube
+          key={currentSong?.id}
           videoId={currentSong?.id}
+          onEnd={() => {
+            if (playerRef.current) {
+              playerRef.current.stopVideo();
+            }
+            socket.emit("SONG_ENDED", { roomId: "room1" });
+          }}
           onReady={(e) => {
+            // if(!playerRef.current) return;
             playerRef.current = e.target;
+            if (!currentSong) return;
+            if (currentSong) {
+              const elapsed = (Date.now() - currentSong.startAt) / 1000;
+
+              e.target.seekTo(elapsed, true);
+              e.target.playVideo();
+
+              hasSyncedRef.current = true;
+            }
           }}
         />
+      ) : (
+        <p>No song playing</p>
       )}
 
       <button onClick={() => socket.emit("VOTE", { roomId: "room1", vote: "like" })}>
