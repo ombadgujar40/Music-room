@@ -7,14 +7,18 @@ function App() {
   const [songId, setSongId] = useState("");
   const isDJ = socket.id === room?.currentDJ;
   const [currentSong, setCurrentSong] = useState<any>(null);
-  const [shouldPlay, setShouldPlay] = useState(false);
+  // const [shouldPlay, setShouldPlay] = useState(false);
   const [hasUnlockedAudio, setHasUnlockedAudio] = useState(false);
   const playerRef = useRef<any>(null);
   const hasSyncedRef = useRef(false);
-  const prevSongRef = useRef<any>(null);
+  // const prevSongRef = useRef<any>(null);
+  const [roomId, setRoomId] = useState("room1");
+  const [joined, setJoined] = useState(false);
+
+
 
   useEffect(() => {
-
+    if (!joined) return
     //display status of rooms
     socket.on("ROOM_UPDATE", (roomData) => {
       console.log("Room State:", roomData);
@@ -24,15 +28,15 @@ function App() {
     });
 
     //room joining handler
-    socket.emit("JOIN_ROOM", {
-      roomId: "room1",
-      name: "User_" + Math.floor(Math.random() * 1000),
-    });
+    // socket.emit("JOIN_ROOM", {
+    //   roomId: "room1",
+    //   name: "User_" + Math.floor(Math.random() * 1000),
+    // });
 
     return () => {
       socket.off("ROOM_UPDATE");
     };
-  }, []);
+  }, [joined]);
 
 
   useEffect(() => {
@@ -42,23 +46,23 @@ function App() {
     }
   }, [currentSong]);
 
- 
 
 
 
-  useEffect(() => {
-    if (!currentSong?.startAt) return;
 
-    const delay = currentSong.startAt - Date.now();
+  // useEffect(() => {
+  //   if (!currentSong?.startAt) return;
 
-    if (delay > 0) {
-      setTimeout(() => {
-        setShouldPlay(true);
-      }, delay);
-    } else {
-      setShouldPlay(true);
-    }
-  }, [currentSong]);
+  //   const delay = currentSong.startAt - Date.now();
+
+  //   if (delay > 0) {
+  //     setTimeout(() => {
+  //       setShouldPlay(true);
+  //     }, delay);
+  //   } else {
+  //     setShouldPlay(true);
+  //   }
+  // }, [currentSong]);
 
   useEffect(() => {
     if (!currentSong || !playerRef.current) return;
@@ -83,6 +87,36 @@ function App() {
 
   return (
     <div>
+
+      <div>
+
+        {!joined && (
+          <div>
+            <input
+              placeholder="Enter Room ID"
+              value={roomId}
+              onChange={(e) => setRoomId(e.target.value)}
+            />
+            <button
+              onClick={() => {
+                socket.emit("JOIN_ROOM", {
+                  roomId,
+                  name: "User_" + Math.floor(Math.random() * 1000),
+                });
+                setJoined(true);
+              }}
+            >
+              Join Room
+            </button>
+          </div>
+        )}
+      </div>
+
+      <>
+        <h2>
+          User Name: {room?.users?.find((u: any) => u.id === socket.id)?.name || "None"}
+        </h2>
+      </>
       <h2>Current DJ:</h2>
       <p>
         {room?.users?.find((u: any) => u.id === room?.currentDJ)?.name || "None"}
@@ -188,6 +222,8 @@ function App() {
       <button onClick={() => socket.emit("VOTE", { roomId: "room1", vote: "skip" })}>
         ⏭ Skip
       </button>
+
+
     </div>
 
 
