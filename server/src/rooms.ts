@@ -10,9 +10,6 @@ type Song = {
   startAt: number;
 };
 
-
-
-
 export type Room = {
   id: string;
   users: User[];
