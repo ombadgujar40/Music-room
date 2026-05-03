@@ -169,11 +169,14 @@ code {
   border-radius: 16px;
   padding: 20px;
   backdrop-filter: blur(10px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px
 }
 
 /* INPUT */
 .input {
-  flex: 1;
+  flex: 0.5;
   height: 40px;
   border-radius: 8px;
   border: none;
